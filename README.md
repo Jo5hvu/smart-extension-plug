@@ -31,20 +31,6 @@ Control 3 AC sockets remotely using Wemos D1 R32 ESP32, MQTT, and a beautiful we
 | Enclosure | 1 | Plastic project box |
 
 ## 📊 System Architecture
-┌─────────────────────────────────────────────────────────────────┐
-│                         INTERNET                                  │
-│                                                                   │
-│  ┌──────────────┐     ┌──────────────────┐     ┌─────────────┐  │
-│  │   Your Phone │     │  HiveMQ Public   │     │ Your Laptop │  │
-│  │  (Dashboard) │────▶│    Broker        │◀────│ (Dashboard) │  │
-│  │              │     │  (Cloud Server)  │     │             │  │
-│  └──────────────┘     └────────┬─────────┘     └─────────────┘  │
-│                                │                                  │
-│                                │ (Future)                         │
-│                                ▼                                  │
-│                         ┌─────────────┐                          │
-│                         │ ESP32/Wemos │                          │
-│                         │ (At home)   │                          │
-│                         └─────────────┘                          │
-└─────────────────────────────────────────────────────────────────┘
+<img width="491" height="354" alt="image" src="https://github.com/user-attachments/assets/23e917ea-7218-4d09-8596-74655257a581" />
+
  
