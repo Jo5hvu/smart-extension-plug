@@ -30,5 +30,21 @@ Control 3 AC sockets remotely using Wemos D1 R32 ESP32, MQTT, and a beautiful we
 | Jumper Wires | 20+ | Female-to-female |
 | Enclosure | 1 | Plastic project box |
 
-## 📊 Wiring Diagram
+## 📊 System Architecture
+┌─────────────────────────────────────────────────────────────────┐
+│                         INTERNET                                  │
+│                                                                   │
+│  ┌──────────────┐     ┌──────────────────┐     ┌─────────────┐  │
+│  │   Your Phone │     │  HiveMQ Public   │     │ Your Laptop │  │
+│  │  (Dashboard) │────▶│    Broker        │◀────│ (Dashboard) │  │
+│  │              │     │  (Cloud Server)  │     │             │  │
+│  └──────────────┘     └────────┬─────────┘     └─────────────┘  │
+│                                │                                  │
+│                                │ (Future)                         │
+│                                ▼                                  │
+│                         ┌─────────────┐                          │
+│                         │ ESP32/Wemos │                          │
+│                         │ (At home)   │                          │
+│                         └─────────────┘                          │
+└─────────────────────────────────────────────────────────────────┘
  
