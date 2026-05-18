@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <style>
+        /* Your existing styles remain the same */
         * {
             margin: 0;
             padding: 0;
@@ -384,7 +385,9 @@
         <div class="settings-panel">
             <h3><i class="fas fa-network-wired"></i> MQTT Connection Settings</h3>
             <div class="settings-form">
-                <input type="text" id="mqtt-broker" placeholder="Broker URL" value="ws://broker.hivemq.com:8000/mqtt">
+                <input type="text" id="mqtt-broker" placeholder="Broker URL" value="wss://broker.hivemq.com:8884/mqtt">
+                <input type="text" id="mqtt-username" placeholder="Username (from HiveMQ)">
+                <input type="password" id="mqtt-password" placeholder="Password (from HiveMQ)">
                 <input type="text" id="mqtt-client-id" placeholder="Client ID" value="dashboard_client">
                 <button id="btn-connect-mqtt">Connect to MQTT Broker</button>
                 <button id="btn-disconnect-mqtt">Disconnect</button>
@@ -441,6 +444,11 @@
                 statusSpan.innerHTML = '<span class="status-indicator"></span> MQTT Connected';
                 addLogEntry("Connected to MQTT broker", "success");
                 isSimulationMode = false;
+                
+                // Request current states from ESP32 by publishing a status request
+                for (let i = 1; i <= 3; i++) {
+                    mqttClient.publish(TOPICS.STATE(i), "STATUS?");
+                }
             } else {
                 statusSpan.className = "connection-status status-disconnected";
                 statusSpan.innerHTML = '<span class="status-indicator"></span> Disconnected';
@@ -455,8 +463,13 @@
             const command = state ? "ON" : "OFF";
             
             if (!isSimulationMode && mqttClient && mqttClient.connected) {
+                // Publish command to ESP32
                 mqttClient.publish(TOPICS.COMMAND(socket), command);
                 addLogEntry(`Published to ${TOPICS.COMMAND(socket)}: ${command}`);
+                
+                // Also publish state so other dashboards sync immediately
+                mqttClient.publish(TOPICS.STATE(socket), command);
+                addLogEntry(`Published sync state to ${TOPICS.STATE(socket)}: ${command}`);
             } else {
                 addLogEntry(`[SIMULATION] Socket ${socket} turned ${command}`, "info");
             }
@@ -475,6 +488,8 @@
         
         function connectMQTT() {
             const brokerUrl = document.getElementById("mqtt-broker").value;
+            const username = document.getElementById("mqtt-username").value;
+            const password = document.getElementById("mqtt-password").value;
             let clientId = document.getElementById("mqtt-client-id").value;
             
             if (!brokerUrl) {
@@ -487,39 +502,77 @@
                 document.getElementById("mqtt-client-id").value = clientId;
             }
             
-            addLogEntry(`Connecting to ${brokerUrl}...`);
+            addLogEntry(`Connecting to ${brokerUrl} with client ID: ${clientId}`);
             
             try {
-                mqttClient = mqtt.connect(brokerUrl, {
+                const options = {
                     clientId: clientId,
                     keepalive: 60,
                     clean: true,
                     reconnectPeriod: 5000
-                });
+                };
+                
+                // Add authentication if provided
+                if (username && password) {
+                    options.username = username;
+                    options.password = password;
+                    addLogEntry(`Using username: ${username}`);
+                }
+                
+                mqttClient = mqtt.connect(brokerUrl, options);
                 
                 mqttClient.on("connect", () => {
-                    addLogEntry(`Connected!`, "success");
+                    addLogEntry(`Connected successfully!`, "success");
                     updateConnectionStatus(true);
                     
+                    // Subscribe to ALL topics
                     for (let i = 1; i <= 3; i++) {
+                        mqttClient.subscribe(TOPICS.COMMAND(i));
                         mqttClient.subscribe(TOPICS.STATE(i));
+                        addLogEntry(`Subscribed to ${TOPICS.COMMAND(i)}`);
                         addLogEntry(`Subscribed to ${TOPICS.STATE(i)}`);
                     }
+                    mqttClient.subscribe(TOPICS.ALL_COMMAND);
+                    addLogEntry(`Subscribed to ${TOPICS.ALL_COMMAND}`);
                 });
                 
                 mqttClient.on("message", (topic, message) => {
                     const msgStr = message.toString();
                     addLogEntry(`Received on ${topic}: ${msgStr}`);
                     
+                    // Check if it's a state update for any socket
                     for (let i = 1; i <= 3; i++) {
                         if (topic === TOPICS.STATE(i)) {
-                            const newState = msgStr === "ON";
+                            const newState = (msgStr === "ON" || msgStr === "true" || msgStr === "1");
+                            if (relayStates[i] !== newState) {
+                                relayStates[i] = newState;
+                                updateUI(i, newState);
+                                addLogEntry(`Socket ${i} state synced to ${newState ? "ON" : "OFF"}`, "success");
+                            }
+                            break;
+                        }
+                        // Also listen to command topics to sync (in case ESP32 echoes back)
+                        else if (topic === TOPICS.COMMAND(i)) {
+                            const newState = (msgStr === "ON" || msgStr === "true" || msgStr === "1");
+                            if (relayStates[i] !== newState) {
+                                relayStates[i] = newState;
+                                updateUI(i, newState);
+                                addLogEntry(`Socket ${i} command echoed - synced to ${newState ? "ON" : "OFF"}`, "success");
+                            }
+                            break;
+                        }
+                    }
+                    
+                    // Handle all command
+                    if (topic === TOPICS.ALL_COMMAND) {
+                        const newState = (msgStr === "ON");
+                        for (let i = 1; i <= 3; i++) {
                             if (relayStates[i] !== newState) {
                                 relayStates[i] = newState;
                                 updateUI(i, newState);
                             }
-                            break;
                         }
+                        addLogEntry(`All sockets command echoed - synced to ${newState ? "ON" : "OFF"}`, "success");
                     }
                 });
                 
@@ -533,8 +586,16 @@
                     updateConnectionStatus(false);
                 });
                 
+                mqttClient.on("reconnect", () => {
+                    addLogEntry("Attempting to reconnect...", "info");
+                });
+                
+                mqttClient.on("offline", () => {
+                    addLogEntry("Client is offline", "info");
+                });
+                
             } catch (error) {
-                addLogEntry(`Failed: ${error.message}`, "error");
+                addLogEntry(`Failed to connect: ${error.message}`, "error");
                 updateConnectionStatus(false);
             }
         }
@@ -543,7 +604,7 @@
             if (mqttClient) {
                 mqttClient.end();
                 mqttClient = null;
-                addLogEntry("Disconnected");
+                addLogEntry("Disconnected from MQTT broker");
                 updateConnectionStatus(false);
             }
         }
@@ -568,8 +629,9 @@
         function init() {
             setupEventListeners();
             updateConnectionStatus(false);
-            addLogEntry("Dashboard ready - using ws://broker.hivemq.com:8000", "info");
-            addLogEntry("Click 'Connect to MQTT Broker' to connect", "info");
+            addLogEntry("Dashboard ready!", "info");
+            addLogEntry("Enter your HiveMQ Cloud credentials and click Connect", "info");
+            addLogEntry("Make sure to use wss://your-cluster.hivemq.cloud:8884/mqtt", "info");
             
             for (let i = 1; i <= 3; i++) {
                 updateUI(i, false);
